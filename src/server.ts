@@ -1,6 +1,7 @@
 import 'reflect-metadata'
 import express, { Request, Response, NextFunction } from 'express'
 import "express-async-errors"
+import cors from 'cors'
 import { router } from './routes'
 
 // Chamando o express
@@ -8,6 +9,8 @@ const app = express()
 
 // importando a conexao com o banco de dados
 import './database'
+
+app.use(cors())
 
 // configurando a rota para receber requisiçoes em formato json
 app.use(express.json())

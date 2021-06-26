@@ -2,6 +2,7 @@
 #unidade
 #embuscadeevolução
 #legacy
+#
 
 -> Criando o projeto
 
@@ -875,3 +876,302 @@ Passar o controller do compliments para as rotas no arquivo routes.ts e inserind
     const createComplementController = new CreateComplimentController()
     router.post('/compliments', createComplementController.handle)
 
+-> Criar o middleware de autenticação de usuario  
+
+No diretorio de middleware criar o arquivo ensureAuthenticated.ts e inserir as linhas: 
+
+    import { Request, Response, NextFunction } from 'express'
+
+export function ensureAuthenticated(request: Request, response: Response, next: NextFunction) {
+    // ! receber o token
+    const token = request.headers.authorization
+    console.log(token)
+
+    return next()
+
+    // ! Validar se o token esta preenchido
+
+    // ! Validar se o token é valido 
+
+    // ! recuperar informações do usuario
+}
+
+Para testar, no insomnia, na parte de "Auth" escolher a opcao "Bearer token" e passar um token por ele 
+
+No arquivo routes.ts passar esse middleware na rota de tags, antes do middleware de admin, ficando assim 
+
+    router.post('/tags', ensureAuthenticated, ensureAdmin, createTagController.handle)
+
+Para fazer a verificaçãpo se o token é valido e para recuperar informações do usuario, inserir as linhas nos campos corretos: 
+
+    interface IPayLoad {
+    sub: string
+}
+
+    export function ensureAuthenticated(request: Request, response: Response, next: NextFunction) {
+    // ! receber o token
+    const authToken = request.headers.authorization
+    console.log(authToken)
+    
+    // ! Validar se o token esta preenchido
+    if (!authToken) {
+        return response.status(401).end()
+    }
+
+    const [, token] = authToken.split(" ")
+    
+    try {
+        // ! Validar se o token é valido 
+        const { sub } = verify(token, "5c995f63ab416be10abeaf9fe9e42891")
+
+        request.user_id = sub
+         return next()
+    }catch (err){
+        return response.status(400).end()
+    }
+    
+    // ! recuperar informações do usuario
+}
+
+No diretorio src criar o diretorio @types, dentro dele criar o diretorio express e dentro dele criar 
+o arquivo index.d.ts e inserir as linhas: 
+
+    declare namespace Express {
+    export interface Request {
+        user_id: string
+    }
+}
+
+Noa arquivo tsconfig.json descomentar a linha typeroots e inserir em seu array "./src/@types"
+
+No arquivo ensureAdmin.ts apos a linha export function inserir as linhas: 
+
+        const { user_id } = request
+        console.log(user_id)
+
+No arquivo de rotas, passsar o middleware de autenticação na rota de tags ficando assim: 
+
+router.post('/tags', ensureAuthenticated, ensureAdmin, createTagController.handle)
+
+-> Refatorando o codigo de verificação de usuario se é admin 
+
+No arquivo ensureAdmin importar o repositorio de users para capturar o id do usuario: 
+
+    import { Request, Response, NextFunction } from 'express'
+import { getCustomRepository } from 'typeorm'
+import { UsersRepositories } from '../repositories/UsersRepositories'
+
+export async function ensureAdmin(request: Request, response: Response, next: NextFunction) {
+    const { user_id } = request
+
+    const usersRepositories = getCustomRepository(UsersRepositories)
+
+    const { admin } = await usersRepositories.findOne(user_id)
+    
+    if(admin) {
+        return next()
+    } 
+
+    return response.status(401).json({
+        error: "Unauthorized",
+    })
+}
+
+-> Refatorando compliments
+
+No arquivo CreateComplimentsController.ts, abaixo do const { tag_id, user_receiver } adicionar: 
+
+    const { user_id } = request 
+
+E na linha await createComplimentService.execute mudar a linha user_sender para: 
+
+    user_sender: user_id
+
+-> Listando cumpliments de quem esta recebendo
+
+No diretorio services criar o arquivo ListUserReceiveComplimentsServices.ts e inserir as linhas: 
+
+    import { getCustomRepository } from "typeorm"
+    import { ComplimentsRepositories } from "../repositories/ComplimentsRepositories"
+
+    class ListUserReceiveCompliments {
+        async execute(user_id: string) {
+            const complimentsRepositories = getCustomRepository(ComplimentsRepositories)
+
+            const compliments = await complimentsRepositories.find({
+                where: {
+                    user_receiver: user_id
+                }
+            })
+
+            return compliments
+        }
+    }
+
+    export { ListUserReceiveCompliments }
+
+Fazer a mesma coisa para o ListUserSendComplimentService.ts
+
+-> Criando o controller desses dois services 
+
+No diretorio controlllers criar os arquivos ListUserReceiveComplimentsController.ts e ListUserSendComplimentsController.ts 
+e inserir as linhas: (Fazer isso nos dois arquivos apenas alterando o que for necessario)
+
+    import { Request, Response } from "express";
+import { ListUserReceiveComplimentsService } from "../services/ListUserReceiveComplimentsService";
+
+class ListUserReceiveComplimentsController {
+    async handle(request: Request, response: Response) {
+        const { user_id } = request
+
+        const listUserReceiveComplimentsService = new ListUserReceiveComplimentsService()
+
+        const compliments = await listUserReceiveComplimentsService.execute(user_id)
+
+        return response.json(compliments)
+    }
+}
+
+export { ListUserReceiveComplimentsController }
+
+No arquivo de rotas adicionar a rota get para essas duas listagens, assim como a importação ew a invocação 
+
+    import { ListUserSendComplimentsController } from './controllers/ListUserSendComplimentsController'
+    import { ListUserReceiveComplimentsController } from './controllers/ListUserReceiveComplimentsController'
+
+    const listUserSendComplimentsController = new ListUserSendComplimentsController()
+    const listUserReceiveComplimentsController = new ListUserReceiveComplimentsController()
+
+    router.get('/user/compliments/send', ensureAuthenticated, listUserSendComplimentsController.handle)
+    router.get('/user/compliments/receive', ensureAuthenticated, listUserReceiveComplimentsController.handle)
+
+Buscar os relacionamentos entre as entidades: 
+
+Nos arquivo ListUserReceiveCompliment apos a linha where passar a linha relations para buscar 
+outras informações das relacoes ficando assim: 
+
+    relations: ["userSender", "userReceiver", "tag"]
+
+-> Listar as tags da aplicação: 
+
+No diretorio services criar o arquivo ListTagsService.ts e inserir as linhas: 
+
+    import { getCustomRepository } from "typeorm"
+import { TagsRepositories } from "../repositories/TagsRepositories"
+
+
+class ListTagsServices {
+    async execute() {
+        const tagsRepositories = getCustomRepository(TagsRepositories)
+
+        const tags = tagsRepositories.find()
+        
+        return tags
+    }
+}
+
+export { ListTagsServices }
+
+Criar o controller de listar as tags, no diretorio controller criar o arquivo ListTagsController.ts~
+e inserir as linhas: 
+
+    import { getCustomRepository } from "typeorm"
+    import { TagsRepositories } from "../repositories/TagsRepositories"
+
+
+    class ListTagsService {
+        async execute() {
+            const tagsRepositories = getCustomRepository(TagsRepositories)
+
+            const tags = tagsRepositories.find()
+            
+            return response.json(tags)
+        }
+    }
+
+    export { ListTagsService }
+
+Importar, invocar e colocar o controller na rota 
+
+    import { ListTagsController } from './controllers/ListTagsController'
+    const listTagsController = new ListTagsController()
+    router.get('/tags', ensureAuthenticated, listTagsController.handle)
+
+-> Adicionando informações a mais que nao estao nas listagens
+
+No terminal instalar a biblioteca: 
+
+- yarn add class-transformer
+
+No arquivo de entidade das tags adicionar as informações ficando assim: 
+
+    @Entity("tags")
+class Tag {
+    @PrimaryColumn()
+    readonly id: string
+
+    @Column()
+    name: string
+    
+    @CreateDateColumn()
+    created_at: Date
+    
+    @UpdateDateColumn()
+    updated_at: Date
+
+    @Expose({ name: "nameCustom" })
+    nameCustom(): string {
+        return `#${this.name}`
+    }
+
+    constructor() {
+        if(!this.id) {
+            this.id = uuid()
+        }
+    }
+
+}
+
+No arquivo de service do listTags, alterar o return para: 
+
+        return classToPlain(tags)
+
+-> Listar os usuarios 
+
+No diretorio services criar o arquivo ListUsersService.ts e inserir as linhas: 
+
+    import { getCustomRepository } from "typeorm"
+    import { UsersRepositories } from "../repositories/UsersRepositories"
+
+    class ListUsersServices {
+        async execute() {
+            const usersRepositories = getCustomRepository(UsersRepositories)
+
+            const users = await usersRepositories.find()
+
+            return users
+        }
+    }
+
+    export { ListUsersServices }
+
+Criar o controller do listUsers e inserir as linhas: 
+
+-> Usar o class trasform para nao mostrar as senhas 
+
+No arquivo entity de users, importar o class transform e na linha de password colocar exclude
+ficando assim 
+
+    @Exclude()
+    @Column()
+    password: string
+
+No arquivo service do users alterar o return para: 
+
+    return classToPlain(users)
+
+Adicionando cors para que outras aplicações possam acessar o projeto: 
+
+No terminal instalar: 
+
+- yarn add cors

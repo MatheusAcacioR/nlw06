@@ -1,4 +1,4 @@
-import { CreateTagService } from "../services/CreateTagServices"
+import { CreateTagService } from "../services/CreateTagService"
 import { Request, Response } from 'express'
 
 class CreateTagController {
